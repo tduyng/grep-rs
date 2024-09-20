@@ -16,6 +16,11 @@ pub fn run(config: cli::Config) -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn match_pattern(input: &str, pattern: &str) -> bool {
     let mut input_chars = input.chars().peekable();
+    let mut pattern_chars = pattern.chars().peekable();
+
+    if is_start_of_line_anchor(&mut pattern_chars) {
+        return match_start_of_line(&mut input_chars, &mut pattern_chars);
+    }
 
     while input_chars.peek().is_some() {
         if match_at_position(&mut input_chars.clone(), &mut pattern.chars().peekable()) {
@@ -25,6 +30,32 @@ pub fn match_pattern(input: &str, pattern: &str) -> bool {
     }
 
     false
+}
+
+fn is_start_of_line_anchor(pattern_chars: &mut Peekable<Chars>) -> bool {
+    if let Some('^') = pattern_chars.peek() {
+        pattern_chars.next(); // Consume the `^`
+        true
+    } else {
+        false
+    }
+}
+
+fn match_start_of_line(
+    input_chars: &mut Peekable<Chars>,
+    pattern_chars: &mut Peekable<Chars>,
+) -> bool {
+    for pat_char in pattern_chars {
+        if let Some(input_char) = input_chars.next() {
+            if pat_char != input_char {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn match_at_position(
