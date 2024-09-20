@@ -15,6 +15,7 @@ fn match_pattern(input: &str, pattern: &str) -> bool {
     match pattern {
         _ if pattern.chars().count() == 1 => input.contains(pattern),
         "\\d" => input.chars().any(|c| c.is_digit(10)),
+        "\\w" => input.chars().any(|c| c.is_alphanumeric() || c == '_'),
         _ => unimplemented!("Pattern '{}' is not implemented yet.", pattern),
     }
 }
