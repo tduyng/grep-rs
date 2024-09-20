@@ -6,7 +6,7 @@ pub fn run(config: cli::Config) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
 
-    if match_pattern(&input.trim(), &config.pattern) {
+    if match_pattern(input.trim(), &config.pattern) {
         println!("{}", input.trim());
         std::process::exit(0);
     } else {
@@ -20,6 +20,10 @@ pub fn match_pattern(input: &str, pattern: &str) -> bool {
 
     if is_start_of_line_anchor(&mut pattern_chars) {
         return match_start_of_line(&mut input_chars, &mut pattern_chars);
+    }
+
+    if is_end_of_line_anchor(pattern) {
+        return match_end_of_line(&mut input_chars, pattern);
     }
 
     while input_chars.peek().is_some() {
@@ -56,6 +60,27 @@ fn match_start_of_line(
     }
 
     true
+}
+
+fn is_end_of_line_anchor(pattern: &str) -> bool {
+    pattern.ends_with('$')
+}
+
+fn match_end_of_line(input_chars: &mut Peekable<Chars>, pattern: &str) -> bool {
+    let trimmed_pattern = &pattern[..pattern.len() - 1]; // Remove the `$`
+
+    let pattern_chars = trimmed_pattern.chars().peekable();
+    for pat_char in pattern_chars {
+        if let Some(input_char) = input_chars.next() {
+            if pat_char != input_char {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    input_chars.peek().is_none()
 }
 
 fn match_at_position(
@@ -105,7 +130,7 @@ fn match_bracket_class(
     };
 
     let mut matched = false;
-    while let Some(c) = pattern_chars.next() {
+    for c in pattern_chars.by_ref() {
         if c == ']' {
             break; // End of class
         }
@@ -127,7 +152,7 @@ fn match_bracket_class(
 
 fn match_digit(input_chars: &mut Peekable<Chars>) -> bool {
     if let Some(c) = input_chars.peek() {
-        if c.is_digit(10) {
+        if c.is_ascii_digit() {
             input_chars.next(); // Consume the digit
             return true;
         }
