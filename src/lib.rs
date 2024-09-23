@@ -1,29 +1,36 @@
-use std::{iter::Peekable, str::Chars};
+use std::{
+    io::{self, BufRead},
+    iter::Peekable,
+    str::Chars,
+};
 
 pub mod cli;
 
 pub fn run(config: cli::Config) -> Result<(), Box<dyn std::error::Error>> {
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    let stdin = io::stdin();
+    let handle = stdin.lock();
 
-    if match_pattern(input.trim(), &config.pattern) {
-        println!("{}", input.trim());
-        std::process::exit(0);
-    } else {
-        std::process::exit(1);
+    for line in handle.lines() {
+        let line = line?;
+        if match_pattern(&line, &config.pattern) {
+            println!("{}", line);
+            std::process::exit(0);
+        }
     }
+
+    std::process::exit(1);
 }
 
-pub fn match_pattern(input: &str, pattern: &str) -> bool {
+fn match_pattern(input: &str, pattern: &str) -> bool {
     let mut input_chars = input.chars().peekable();
     let mut pattern_chars = pattern.chars().peekable();
 
-    if is_start_of_line_anchor(&mut pattern_chars) {
-        return match_start_of_line(&mut input_chars, &mut pattern_chars);
+    if let Some('^') = pattern_chars.peek() {
+        return match_start(&mut input_chars, &mut pattern_chars);
     }
 
-    if is_end_of_line_anchor(pattern) {
-        return match_end_of_line(&mut input_chars, pattern);
+    if pattern.ends_with('$') {
+        return match_end(&mut input_chars, pattern);
     }
 
     while input_chars.peek().is_some() {
@@ -36,19 +43,7 @@ pub fn match_pattern(input: &str, pattern: &str) -> bool {
     false
 }
 
-fn is_start_of_line_anchor(pattern_chars: &mut Peekable<Chars>) -> bool {
-    if let Some('^') = pattern_chars.peek() {
-        pattern_chars.next(); // Consume the `^`
-        true
-    } else {
-        false
-    }
-}
-
-fn match_start_of_line(
-    input_chars: &mut Peekable<Chars>,
-    pattern_chars: &mut Peekable<Chars>,
-) -> bool {
+fn match_start(input_chars: &mut Peekable<Chars>, pattern_chars: &mut Peekable<Chars>) -> bool {
     for pat_char in pattern_chars {
         if let Some(input_char) = input_chars.next() {
             if pat_char != input_char {
@@ -58,18 +53,13 @@ fn match_start_of_line(
             return false;
         }
     }
-
     true
 }
 
-fn is_end_of_line_anchor(pattern: &str) -> bool {
-    pattern.ends_with('$')
-}
-
-fn match_end_of_line(input_chars: &mut Peekable<Chars>, pattern: &str) -> bool {
+fn match_end(input_chars: &mut Peekable<Chars>, pattern: &str) -> bool {
     let trimmed_pattern = &pattern[..pattern.len() - 1]; // Remove the `$`
-
     let pattern_chars = trimmed_pattern.chars().peekable();
+
     for pat_char in pattern_chars {
         if let Some(input_char) = input_chars.next() {
             if pat_char != input_char {
@@ -102,14 +92,17 @@ fn match_single(
     p: char,
 ) -> bool {
     match p {
-        '\\' => match_class(input_chars, pattern_chars),
+        '\\' => match_escape_class(input_chars, pattern_chars),
         '[' => match_bracket_class(input_chars, pattern_chars),
-        c if c.is_whitespace() => match_whitespace(input_chars),
+        '+' => match_one_or_more(input_chars, pattern_chars),
         c => match_literal(input_chars, c),
     }
 }
 
-fn match_class(input_chars: &mut Peekable<Chars>, pattern_chars: &mut Peekable<Chars>) -> bool {
+fn match_escape_class(
+    input_chars: &mut Peekable<Chars>,
+    pattern_chars: &mut Peekable<Chars>,
+) -> bool {
     match pattern_chars.next() {
         Some('d') => match_digit(input_chars),
         Some('w') => match_alphanumeric(input_chars),
@@ -117,37 +110,63 @@ fn match_class(input_chars: &mut Peekable<Chars>, pattern_chars: &mut Peekable<C
         _ => false,
     }
 }
+
 fn match_bracket_class(
     input_chars: &mut Peekable<Chars>,
     pattern_chars: &mut Peekable<Chars>,
 ) -> bool {
     let negated = match pattern_chars.peek() {
         Some('^') => {
-            pattern_chars.next(); // Consume '^'
+            pattern_chars.next();
             true
         }
         _ => false,
     };
 
     let mut matched = false;
-    for c in pattern_chars.by_ref() {
+    while let Some(c) = pattern_chars.next() {
         if c == ']' {
-            break; // End of class
+            break;
         }
-
-        if let Some(input_c) = input_chars.peek() {
-            if *input_c == c {
+        if let Some(&input_c) = input_chars.peek() {
+            if input_c == c {
                 matched = true;
-                input_chars.next(); // Consume input character if it matches
+                input_chars.next();
             }
         }
     }
 
     if negated {
-        !matched // Negate the result if the class was negated
+        !matched
     } else {
         matched
     }
+}
+
+fn match_one_or_more(
+    input_chars: &mut Peekable<Chars>,
+    pattern_chars: &mut Peekable<Chars>,
+) -> bool {
+    if let Some(&first_char) = pattern_chars.peek() {
+        pattern_chars.next();
+
+        if let Some(input_char) = input_chars.next() {
+            if input_char != first_char {
+                return false;
+            }
+
+            while let Some(&next_char) = input_chars.peek() {
+                if next_char == first_char {
+                    input_chars.next();
+                } else {
+                    break;
+                }
+            }
+
+            return true;
+        }
+    }
+    false
 }
 
 fn match_digit(input_chars: &mut Peekable<Chars>) -> bool {
